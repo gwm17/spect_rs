@@ -1,3 +1,4 @@
+use super::cut::{Cut, Cut1D, Cut2D, CutSpec};
 use super::data_blob::DataBlob;
 use super::error::ResourceError;
 use super::histogram::{HistSpec, Histogram};
@@ -7,7 +8,7 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct ResourceManager {
     histograms: FxHashMap<Uuid, Histogram>,
-    // cuts: Vec<Box<dyn Cut>>,
+    cuts: FxHashMap<Uuid, Box<dyn Cut>>,
     // graphs: Vec<Box<dyn Graph>>,
 }
 
@@ -15,7 +16,7 @@ impl ResourceManager {
     pub fn new() -> Self {
         Self {
             histograms: FxHashMap::default(),
-            // cuts: vec![],
+            cuts: FxHashMap::default(),
             // graphs: vec![],
         }
     }
@@ -27,7 +28,7 @@ impl ResourceManager {
 
     pub fn remove_histogram(&mut self, id: &Uuid) -> Result<(), ResourceError> {
         if !self.histograms.contains_key(id) {
-            Err(ResourceError::FailedAccessHistogram(*id))
+            Err(ResourceError::InvalidHistogramID(*id))
         } else {
             self.histograms.remove_entry(id);
             Ok(())
@@ -37,19 +38,77 @@ impl ResourceManager {
     pub fn get_histogram_data(&self, id: &Uuid) -> Result<&[u16], ResourceError> {
         match self.histograms.get(id) {
             Some(gram) => Ok(&gram.data),
-            None => Err(ResourceError::FailedAccessHistogram(*id)),
+            None => Err(ResourceError::InvalidHistogramID(*id)),
         }
     }
 
     pub fn get_histogram_spec(&self, id: &Uuid) -> Result<&HistSpec, ResourceError> {
         match self.histograms.get(id) {
             Some(gram) => Ok(&gram.spec),
-            None => Err(ResourceError::FailedAccessHistogram(*id)),
+            None => Err(ResourceError::InvalidHistogramID(*id)),
         }
     }
 
+    pub fn add_cut_1d(
+        &mut self,
+        spec: CutSpec,
+        low_value: f32,
+        high_value: f32,
+        histogram_id: &Uuid,
+    ) -> Result<(), ResourceError> {
+        if let Some(gram) = self.histograms.get_mut(histogram_id) {
+            gram.spec.cuts_to_draw.push(spec.id);
+        } else {
+            return Err(ResourceError::CutFailed(
+                super::error::CutError::NoReferenceHistogram(*histogram_id),
+            ));
+        }
+        let _ = self
+            .cuts
+            .insert(spec.id, Box::new(Cut1D::new(spec, low_value, high_value)?));
+        Ok(())
+    }
+
+    pub fn add_cut_2d(
+        &mut self,
+        spec: CutSpec,
+        x_values: Vec<f32>,
+        y_values: Vec<f32>,
+        histogram_id: &Uuid,
+    ) -> Result<(), ResourceError> {
+        if let Some(gram) = self.histograms.get_mut(histogram_id) {
+            gram.spec.cuts_to_draw.push(spec.id);
+        } else {
+            return Err(ResourceError::CutFailed(
+                super::error::CutError::NoReferenceHistogram(*histogram_id),
+            ));
+        }
+        let _ = self
+            .cuts
+            .insert(spec.id, Box::new(Cut2D::new(spec, x_values, y_values)?));
+        Ok(())
+    }
+
     pub fn update(&mut self, data: DataBlob) -> Result<(), ResourceError> {
+        for cut in self.cuts.values_mut() {
+            cut.is_inside(&data);
+        }
+
+        let mut passed_cuts: bool;
         for gram in self.histograms.values_mut() {
+            passed_cuts = true;
+            for cut_id in gram.spec.cuts_to_check.iter() {
+                if let Some(cut) = self.cuts.get(cut_id) {
+                    if !cut.is_valid() {
+                        passed_cuts = false;
+                        break;
+                    }
+                }
+            }
+            if !passed_cuts {
+                continue;
+            }
+
             let x_val = match data.find(&gram.spec.x_axis.variable) {
                 Some(value) => value,
                 None => continue,

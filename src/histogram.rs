@@ -52,8 +52,8 @@ pub struct HistSpec {
     pub title: String,
     pub x_axis: AxisSpec,
     pub y_axis: Option<AxisSpec>,
-    pub cuts_to_draw: Vec<u64>,
-    pub cuts_to_check: Vec<u64>,
+    pub cuts_to_draw: Vec<Uuid>,
+    pub cuts_to_check: Vec<Uuid>,
 }
 
 #[derive(Debug)]

@@ -1,0 +1,9 @@
+[package]
+name = "specter_ox"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = "2.1.1"
+thiserror = "2.0.12"
+uuid = { version = "1.16.0", features = ["v4"] }
